@@ -22,6 +22,7 @@ namespace Content.Server.Weapons.Ranged.Systems;
 
 public sealed partial class GunSystem : SharedGunSystem
 {
+    [Dependency] private GunLagCompensationSystem _lagCompensation = default!;
     [Dependency] private PricingSystem _pricing = default!;
     [Dependency] private SharedMapSystem _map = default!;
 
@@ -202,15 +203,18 @@ public sealed partial class GunSystem : SharedGunSystem
             var index = shotProjectiles.Count;
             shotProjectiles.Add(projectile);
 
-            // Client requested shots are drawn by the shooter's client as soon as they fire.
-            if (gun.Comp.ShootRequest?.ShotId is not { } shotId || user == null || !HasComp<ProjectileComponent>(projectile))
+            if (user == null || gun.Comp.ShootRequest is not { } request || !HasComp<ProjectileComponent>(projectile))
                 return;
 
+            // Client requested shots are drawn by the shooter's client as soon as they fire.
             var predicted = EnsureComp<PredictedProjectileComponent>(projectile);
             predicted.Shooter = user.Value;
-            predicted.ShotId = shotId;
+            predicted.ShotId = request.ShotId;
             predicted.Index = index;
             Dirty(projectile, predicted);
+
+            // And hit what the shooter saw.
+            _lagCompensation.CompensateProjectile(projectile, user.Value, request.ViewTick);
         }
     }
 

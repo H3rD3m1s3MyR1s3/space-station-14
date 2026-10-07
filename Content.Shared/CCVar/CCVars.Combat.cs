@@ -14,6 +14,14 @@ public sealed partial class CCVars
         CVarDef.Create("combat.gun_lag_compensation", true, CVar.SERVERONLY);
 
     /// <summary>
+    /// Whether projectiles are lag compensated too, which sweeps their path every tick for their first second of flight.
+    /// Only applies while <see cref="CombatGunLagCompensation"/> is on.
+    /// </summary>
+    [CVarControl(AdminFlags.VarEdit)]
+    public static readonly CVarDef<bool> CombatGunLagCompensationProjectiles =
+        CVarDef.Create("combat.gun_lag_compensation_projectiles", true, CVar.SERVERONLY);
+
+    /// <summary>
     /// Hard cap in seconds on how far back a shot can be rewound, no matter the shooter's ping.
     /// </summary>
     [CVarControl(AdminFlags.VarEdit)]

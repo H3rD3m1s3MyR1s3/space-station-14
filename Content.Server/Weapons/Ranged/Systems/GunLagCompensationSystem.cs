@@ -18,7 +18,7 @@ using PhysicsTransform = Robust.Shared.Physics.Transform;
 namespace Content.Server.Weapons.Ranged.Systems;
 
 /// <summary>
-/// Rewinds lag compensated entities to where a shooter saw them when checking what a hitscan shot hit.
+/// Rewinds lag compensated entities to where a shooter saw them when checking what a hitscan shot or a projectile hit.
 /// Without this, players have to lead moving targets by their ping plus the client's interpolation delay.
 /// </summary>
 /// <remarks>
@@ -35,6 +35,7 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
 
     [Dependency] private EntityQuery<FixturesComponent> _fixturesQuery = default!;
     [Dependency] private EntityQuery<MapGridComponent> _gridQuery = default!;
+    [Dependency] private EntityQuery<LagCompensationComponent> _lagQuery = default!;
     [Dependency] private EntityQuery<MapComponent> _mapQuery = default!;
     [Dependency] private EntityQuery<PhysicsComponent> _physicsQuery = default!;
 
@@ -57,6 +58,8 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
     public override void Initialize()
     {
         base.Initialize();
+
+        InitializeProjectiles();
 
         Subs.CVar(_cfg, CCVars.CombatGunLagCompensation, value => _enabled = value, true);
         Subs.CVar(_cfg, CCVars.CombatGunLagCompensationMax, value => _maxRewind = TimeSpan.FromSeconds(value), true);
@@ -103,13 +106,29 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
     /// <paramref name="time"/>. Entities that can't be rewound keep their present hits.
     /// The results stay sorted by distance.
     /// </summary>
+    /// <param name="radius">Half the width of the ray.</param>
     public void RewindRay(EntityUid? ignored,
         MapId mapId,
         CollisionRay ray,
         float maxDistance,
         TimeSpan time,
-        List<RayCastResults> results)
+        List<RayCastResults> results,
+        float radius = 0f)
     {
+        RewindRay(ignored, mapId, ray, maxDistance, time, results, radius, out _);
+    }
+
+    /// <param name="unrewound">Whether a lag compensated entity that may be in the ray's path couldn't be rewound.</param>
+    private void RewindRay(EntityUid? ignored,
+        MapId mapId,
+        CollisionRay ray,
+        float maxDistance,
+        TimeSpan time,
+        List<RayCastResults> results,
+        float radius,
+        out bool unrewound)
+    {
+        unrewound = false;
         UpdateCandidates();
 
         var direction = ray.Direction.Normalized();
@@ -124,7 +143,7 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
             // Can't have been in the ray's path within the rewind window, so skip the expensive checks.
             if (candidateMap != mapId
                 || uid == ignored
-                || DistanceToSegmentSquared(position, ray.Position, end) > reach * reach
+                || DistanceToSegmentSquared(position, ray.Position, end) > (reach + radius) * (reach + radius)
                 || !_physicsQuery.TryComp(uid, out var physics)
                 || !physics.CanCollide
                 || !_fixturesQuery.TryComp(uid, out var fixtures))
@@ -136,12 +155,16 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
             if (!_lag.TryGetPastCoordinates((uid, candidate.Comp, null), time, out var coordinates, out var localAngle)
                 || (!_mapQuery.HasComp(coordinates.EntityId) && !_gridQuery.HasComp(coordinates.EntityId)))
             {
+                unrewound = true;
                 continue;
             }
 
             var mapCoordinates = _transform.ToMapCoordinates(coordinates);
             if (mapCoordinates.MapId != mapId)
+            {
+                unrewound = true;
                 continue;
+            }
 
             for (var i = results.Count - 1; i >= 0; i--)
             {
@@ -153,7 +176,7 @@ public sealed partial class GunLagCompensationSystem : SharedGunLagCompensationS
             var transform = new PhysicsTransform(mapCoordinates.Position, worldAngle);
 
             // Checked last as it's the slowest check and most candidates miss anyway.
-            if (!HitscanRayMath.TryIntersectFixtures(ray.Position, direction, maxDistance, ray.CollisionMask, fixtures, transform, out var distance)
+            if (!HitscanRayMath.TryIntersectFixtures(ray.Position, direction, maxDistance, ray.CollisionMask, fixtures, transform, out var distance, radius)
                 || _container.IsEntityOrParentInContainer(uid))
             {
                 continue;

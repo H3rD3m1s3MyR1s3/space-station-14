@@ -23,7 +23,7 @@ public sealed partial class LagCompensationSystem : EntitySystem
     /// Moves of at least this distance snap instead of being interpolated, matching MaxInterpolationDistance in the
     /// engine's client TransformSystem, which has no cvar.
     /// </summary>
-    private const float MaxInterpolationDistance = 2f;
+    public const float MaxInterpolationDistance = 2f;
 
     public override void Initialize()
     {

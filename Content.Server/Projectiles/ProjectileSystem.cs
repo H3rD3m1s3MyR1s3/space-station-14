@@ -2,6 +2,7 @@ using System.Linq;
 using Content.Server.Administration.Logs;
 using Content.Server.Destructible;
 using Content.Server.Effects;
+using Content.Server.Weapons.Ranged.Components;
 using Content.Server.Weapons.Ranged.Systems;
 using Content.Shared.Camera;
 using Content.Shared.Damage;
@@ -45,8 +46,9 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
         if (attemptEv.Cancelled)
         {
             SetShooter(uid, component, target);
-            // The shooter's client stopped drawing it at the reflector.
+            // The shooter's client stopped drawing it at the reflector, and what they saw no longer matters.
             RemComp<PredictedProjectileComponent>(uid);
+            RemComp<LagCompensatedProjectileComponent>(uid);
             return;
         }
 
