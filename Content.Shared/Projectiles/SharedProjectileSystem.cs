@@ -253,12 +253,32 @@ public sealed class ImpactEffectEvent : EntityEventArgs
     public string Prototype;
     public NetCoordinates Coordinates;
 
-    public ImpactEffectEvent(string prototype, NetCoordinates coordinates)
+    /// <summary>
+    /// The predicted shot this impact belongs to, only set on the copy sent to its shooter.
+    /// Their client skips it if it already drew the impact.
+    /// </summary>
+    public PredictedShot? Shot;
+
+    /// <summary>
+    /// What the projectile hit, only set alongside <see cref="Shot"/>. A moving target can be hit well away from where
+    /// the shooter's client saw it, so their client matches its impact by what it hit too.
+    /// </summary>
+    public NetEntity? Hit;
+
+    public ImpactEffectEvent(string prototype, NetCoordinates coordinates, PredictedShot? shot = null, NetEntity? hit = null)
     {
         Prototype = prototype;
         Coordinates = coordinates;
+        Shot = shot;
+        Hit = hit;
     }
 }
+
+/// <summary>
+/// Identifies a projectile the shooter's client predicted, see <see cref="Weapons.Ranged.Components.PredictedProjectileComponent"/>.
+/// </summary>
+[Serializable, NetSerializable]
+public readonly record struct PredictedShot(int ShotId, int Index);
 
 /// <summary>
 /// Raised when an entity is just about to be hit with a projectile but can reflect it

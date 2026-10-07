@@ -1,7 +1,10 @@
+using Content.Client.Weapons.Ranged.Systems;
 using Content.Shared.Projectiles;
 using Content.Shared.Weapons.Ranged.Systems;
 using Robust.Client.Animations;
 using Robust.Client.GameObjects;
+using Robust.Shared.Map;
+using Robust.Shared.Prototypes;
 using TimedDespawnComponent = Robust.Shared.Spawners.TimedDespawnComponent;
 
 namespace Content.Client.Projectiles;
@@ -9,6 +12,7 @@ namespace Content.Client.Projectiles;
 public sealed partial class ProjectileSystem : SharedProjectileSystem
 {
     [Dependency] private AnimationPlayerSystem _player = default!;
+    [Dependency] private ProjectilePredictionSystem _prediction = default!;
     [Dependency] private SpriteSystem _sprite = default!;
 
     public override void Initialize()
@@ -21,10 +25,22 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
     {
         var coords = GetCoordinates(ev.Coordinates);
 
+        // Already drawn when our own predicted projectile got there.
+        if (ev.Shot is { } shot && _prediction.ConsumePredictedImpact(shot, coords, GetEntity(ev.Hit)))
+            return;
+
+        SpawnImpactEffect(ev.Prototype, coords);
+    }
+
+    /// <summary>
+    /// Spawns and plays a projectile's impact effect.
+    /// </summary>
+    public void SpawnImpactEffect(EntProtoId prototype, EntityCoordinates coords)
+    {
         if (Deleted(coords.EntityId))
             return;
 
-        var ent = Spawn(ev.Prototype, coords);
+        var ent = SpawnAttachedTo(prototype, coords);
 
         if (TryComp<SpriteComponent>(ent, out var sprite))
         {

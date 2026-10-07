@@ -24,13 +24,15 @@ public static class HitscanRayMath
     /// <param name="fixtures">The fixtures to test.</param>
     /// <param name="transform">World transform of the fixtures' owner.</param>
     /// <param name="distance">Distance from <paramref name="origin"/> to the hit.</param>
+    /// <param name="radius">Grows every shape by this much, to test something twice as wide moving along the ray.</param>
     public static bool TryIntersectFixtures(Vector2 origin,
         Vector2 direction,
         float maxDistance,
         int mask,
         FixturesComponent fixtures,
         PhysicsTransform transform,
-        out float distance)
+        out float distance,
+        float radius = 0f)
     {
         distance = float.MaxValue;
 
@@ -40,7 +42,7 @@ public static class HitscanRayMath
             if (!fixture.Hard || (fixture.CollisionLayer & mask) == 0)
                 continue;
 
-            if (TryIntersectShape(origin, direction, fixture.Shape, transform, out var hit)
+            if (TryIntersectShape(origin, direction, fixture.Shape, transform, out var hit, radius)
                 && hit <= maxDistance
                 && hit < distance)
             {
@@ -54,11 +56,15 @@ public static class HitscanRayMath
     /// <summary>
     /// Finds where a ray enters a shape. Unsupported shapes fall back to their AABB.
     /// </summary>
+    /// <param name="radius">
+    /// Grows the shape by this much. Polygons are grown along their edges, which makes them slightly too big at corners.
+    /// </param>
     public static bool TryIntersectShape(Vector2 origin,
         Vector2 direction,
         IPhysShape shape,
         PhysicsTransform transform,
-        out float distance)
+        out float distance,
+        float radius = 0f)
     {
         switch (shape)
         {
@@ -66,15 +72,15 @@ public static class HitscanRayMath
                 return TryIntersectCircle(origin,
                     direction,
                     PhysicsTransform.Mul(transform, circle.Position),
-                    circle.Radius,
+                    circle.Radius + radius,
                     out distance);
             case PolygonShape polygon:
-                return TryIntersectPolygon(origin, direction, polygon, transform, out distance);
+                return TryIntersectPolygon(origin, direction, polygon, transform, radius, out distance);
             case PhysShapeAabb aabb:
                 // Only axis-aligned in the body's local space, which is rotated along with its grid.
                 return TryIntersectAabb(PhysicsTransform.MulT(transform, origin),
                     PhysicsTransform.MulT(transform.Quaternion2D, direction),
-                    aabb.LocalBounds,
+                    aabb.LocalBounds.Enlarged(radius),
                     out distance);
         }
 
@@ -83,7 +89,7 @@ public static class HitscanRayMath
 
         for (var i = 0; i < shape.ChildCount; i++)
         {
-            if (TryIntersectAabb(origin, direction, shape.ComputeAABB(transform, i), out var hit) && hit < distance)
+            if (TryIntersectAabb(origin, direction, shape.ComputeAABB(transform, i).Enlarged(radius), out var hit) && hit < distance)
             {
                 distance = hit;
                 found = true;
@@ -91,6 +97,16 @@ public static class HitscanRayMath
         }
 
         return found;
+    }
+
+    /// <summary>
+    /// How far a shape sticks out to either side of the direction it moves in, to widen a ray to its size.
+    /// </summary>
+    /// <param name="rotation">The shape's rotation relative to the direction it moves in.</param>
+    public static float GetHalfWidth(IPhysShape shape, Angle rotation)
+    {
+        var bounds = shape.ComputeAABB(new PhysicsTransform(Vector2.Zero, rotation), 0);
+        return MathF.Max(bounds.Top, -bounds.Bottom);
     }
 
     /// <summary>
@@ -124,6 +140,7 @@ public static class HitscanRayMath
         Vector2 direction,
         PolygonShape polygon,
         PhysicsTransform transform,
+        float radius,
         out float distance)
     {
         distance = 0f;
@@ -142,8 +159,8 @@ public static class HitscanRayMath
         {
             var normal = polygon.Normals[i];
 
-            // Positive while the origin is on the inner side of this edge.
-            var numerator = Vector2.Dot(normal, polygon.Vertices[i] - localOrigin);
+            // Positive while the origin is on the inner side of this edge, moved out by the radius.
+            var numerator = Vector2.Dot(normal, polygon.Vertices[i] - localOrigin) + radius;
             var denominator = Vector2.Dot(normal, localDirection);
 
             if (MathF.Abs(denominator) < 1e-8f)

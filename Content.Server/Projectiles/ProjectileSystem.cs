@@ -1,3 +1,4 @@
+using System.Linq;
 using Content.Server.Administration.Logs;
 using Content.Server.Destructible;
 using Content.Server.Effects;
@@ -93,6 +94,20 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
                 _sharedCameraRecoil.KickCamera(target, args.OurBody.LinearVelocity.Normalized());
         }
 
+        // The shooter's client predicted this first hit, so it drew the impact itself.
+        PredictedShot? shot = null;
+        NetEntity? hit = null;
+        ICommonSession? shooterSession = null;
+        if (TryComp<PredictedProjectileComponent>(uid, out var predicted)
+            && TryComp<ActorComponent>(predicted.Shooter, out var actor))
+        {
+            shot = new PredictedShot(predicted.ShotId, predicted.Index);
+            shooterSession = actor.PlayerSession;
+
+            // Not there anymore if the hit destroyed it.
+            TryGetNetEntity(target, out hit);
+        }
+
         if (component.DeleteOnCollide && component.ProjectileSpent)
         {
             QueueDel(uid);
@@ -105,7 +120,18 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
 
         if (component.ImpactEffect != null && TryComp(uid, out TransformComponent? xform))
         {
-            RaiseNetworkEvent(new ImpactEffectEvent(component.ImpactEffect, GetNetCoordinates(xform.Coordinates)), Filter.Pvs(xform.Coordinates, entityMan: EntityManager));
+            var coordinates = GetNetCoordinates(xform.Coordinates);
+            var filter = Filter.Pvs(xform.Coordinates, entityMan: EntityManager);
+
+            // Only the shooter is told which of their shots this was. Shot ids are counted per client, so another
+            // client could have a shot with the same id and skip this impact thinking it already drew it.
+            if (shooterSession != null && filter.Recipients.Contains(shooterSession))
+            {
+                filter.RemovePlayer(shooterSession);
+                RaiseNetworkEvent(new ImpactEffectEvent(component.ImpactEffect, coordinates, shot, hit), shooterSession);
+            }
+
+            RaiseNetworkEvent(new ImpactEffectEvent(component.ImpactEffect, coordinates), filter);
         }
     }
 

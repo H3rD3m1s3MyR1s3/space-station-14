@@ -1,7 +1,10 @@
+using System.Collections.Generic;
 using System.Numerics;
 using System.Threading;
 using Content.IntegrationTests.Tests.Interaction;
 using Content.Shared.CombatMode;
+using Content.Shared.Damage.Systems;
+using Content.Shared.FixedPoint;
 using Content.Shared.Projectiles;
 using Content.Shared.Weapons.Ranged.Components;
 using Content.Shared.Weapons.Ranged.Events;
@@ -27,6 +30,9 @@ public sealed class ProjectilePredictionTest : InteractionTest
     private const string Reflector = "ProjectilePredictionTestReflector";
     private const string Fragile = "ProjectilePredictionTestFragile";
     private static readonly EntProtoId VisualPrototype = "ClientsideClone";
+    private static readonly EntProtoId Wall = "WallSolid";
+    private static readonly EntProtoId MobHuman = "MobHuman";
+    private static readonly EntProtoId ImpactEffect = "BulletImpactEffect";
 
     // Guns that hold their ammo directly. Magazine guns warn when the client predicts chambering the next round.
     [TestPrototypes]
@@ -232,13 +238,8 @@ public sealed class ProjectilePredictionTest : InteractionTest
         var visible = 0;
         await Client.WaitPost(() =>
         {
-            var query = CEntMan.EntityQueryEnumerator<ProjectileComponent, SpriteComponent, TransformComponent>();
-            while (query.MoveNext(out _, out _, out var sprite, out var xform))
+            foreach (var (_, sprite) in ClientProjectiles())
             {
-                // Templates the client copies predicted projectiles from, not projectiles in the world.
-                if (xform.MapID == MapId.Nullspace)
-                    continue;
-
                 arrived++;
                 if (sprite.Visible)
                     visible++;
@@ -269,13 +270,8 @@ public sealed class ProjectilePredictionTest : InteractionTest
         var hidden = 0;
         await Client.WaitPost(() =>
         {
-            var query = CEntMan.EntityQueryEnumerator<ProjectileComponent, SpriteComponent, TransformComponent>();
-            while (query.MoveNext(out var uid, out _, out var sprite, out var xform))
+            foreach (var (uid, sprite) in ClientProjectiles())
             {
-                // Templates the client copies predicted projectiles from, not projectiles in the world.
-                if (xform.MapID == MapId.Nullspace)
-                    continue;
-
                 projectiles++;
                 if (!sprite.Visible || CEntMan.HasComponent<PredictedProjectileComponent>(uid))
                     hidden++;
@@ -352,13 +348,8 @@ public sealed class ProjectilePredictionTest : InteractionTest
             await RunTicks(1);
             await Client.WaitPost(() =>
             {
-                var query = CEntMan.EntityQueryEnumerator<ProjectileComponent, SpriteComponent, TransformComponent>();
-                while (query.MoveNext(out var uid, out _, out var sprite, out var xform))
+                foreach (var (uid, sprite) in ClientProjectiles())
                 {
-                    // Templates the client copies predicted projectiles from, not projectiles in the world.
-                    if (xform.MapID == MapId.Nullspace)
-                        continue;
-
                     if (sprite.Visible && !CEntMan.HasComponent<PredictedProjectileComponent>(uid))
                         revealed = true;
                 }
@@ -366,6 +357,77 @@ public sealed class ProjectilePredictionTest : InteractionTest
         }
 
         return revealed;
+    }
+
+    [Test]
+    [TestCase(false)]
+    // Steps back along the line of fire after the shooter fired, so the server's bullet hits it further away.
+    [TestCase(true)]
+    public async Task ShooterSeesImpactOnce(bool movingMob)
+    {
+        await AddAtmosphere(); // prevent the Urist from suffocating
+
+        var targetCoords = SEntMan.GetNetCoordinates(SEntMan.GetCoordinates(TargetCoords).Offset(new Vector2(2f, 0f)));
+        var target = await Spawn(movingMob ? MobHuman : Wall, targetCoords);
+
+        var gun = await PlaceInHands(Rifle);
+        await Pair.RunSeconds(2f); // Guns have a cooldown when picking them up.
+        await EnterCombatMode();
+
+        var seen = new HashSet<EntityUid>();
+
+        await Client.WaitPost(() =>
+        {
+            CEntMan.RaisePredictiveEvent(new RequestShootEvent
+            {
+                Gun = gun,
+                ShotId = Interlocked.Increment(ref _lastShotId),
+                Coordinates = targetCoords,
+                ViewTick = CTiming.LastRealTick,
+            });
+        });
+
+        if (movingMob)
+        {
+            var moved = SEntMan.GetCoordinates(targetCoords).Offset(new Vector2(1.5f, 0f));
+            await Server.WaitPost(() => SEntMan.System<SharedTransformSystem>().SetCoordinates(ToServer(target), moved));
+        }
+
+        // Only the client runs, so any impact it shows is its own prediction.
+        await Client.WaitRunTicks(15);
+        await Client.WaitPost(() => CollectImpacts(seen));
+
+        Assert.That(seen, Has.Count.EqualTo(1), "Shooter's client didn't draw the impact when its projectile hit.");
+
+        // Long enough for the server's impact to arrive, while the predicted one would have despawned well before.
+        for (var i = 0; i < 30; i++)
+        {
+            await RunTicks(1);
+            await Client.WaitPost(() => CollectImpacts(seen));
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(seen, Has.Count.EqualTo(1), "Server sent the shooter a second impact for their own projectile.");
+
+            if (movingMob)
+            {
+                Assert.That(SEntMan.System<DamageableSystem>().GetTotalDamage(ToServer(target)),
+                    Is.GreaterThan(FixedPoint2.Zero),
+                    "Server's bullet missed the mob.");
+            }
+        });
+    }
+
+    private void CollectImpacts(HashSet<EntityUid> seen)
+    {
+        var query = CEntMan.EntityQueryEnumerator<MetaDataComponent>();
+
+        while (query.MoveNext(out var uid, out var meta))
+        {
+            if (meta.EntityPrototype?.ID == ImpactEffect)
+                seen.Add(uid);
+        }
     }
 
     private async Task EnterCombatMode()
@@ -391,5 +453,18 @@ public sealed class ProjectilePredictionTest : InteractionTest
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// The client's projectiles, leaving out the templates it copies predicted projectiles from.
+    /// </summary>
+    private IEnumerable<(EntityUid Uid, SpriteComponent Sprite)> ClientProjectiles()
+    {
+        var query = CEntMan.EntityQueryEnumerator<ProjectileComponent, SpriteComponent, TransformComponent>();
+        while (query.MoveNext(out var uid, out _, out var sprite, out var xform))
+        {
+            if (xform.MapID != MapId.Nullspace)
+                yield return (uid, sprite);
+        }
     }
 }

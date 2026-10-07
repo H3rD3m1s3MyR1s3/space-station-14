@@ -16,8 +16,8 @@ public sealed partial class PredictedProjectileComponent : Component
 {
     /// <summary>
     /// The player entity whose client predicted this projectile.
+    /// Not networked, as only that player is sent this component.
     /// </summary>
-    [AutoNetworkedField]
     public EntityUid Shooter;
 
     /// <summary>
