@@ -145,6 +145,12 @@ public sealed partial class GunComponent : Component
     public EntityUid? Target = null;
 
     /// <summary>
+    /// Transient per-call server state: the client request being fired, only set during its AttemptShoot call.
+    /// </summary>
+    [ViewVariables]
+    public RequestShootEvent? ShootRequest;
+
+    /// <summary>
     ///     The base value for how many shots to fire per burst.
     /// </summary>
     [DataField, AutoNetworkedField]

@@ -1,5 +1,6 @@
 using Robust.Shared.Map;
 using Robust.Shared.Serialization;
+using Robust.Shared.Timing;
 
 namespace Content.Shared.Weapons.Ranged.Events;
 
@@ -29,4 +30,10 @@ public sealed class RequestShootEvent : EntityEventArgs
     /// If true, the gun will continue firing until a stop event is sent from the client.
     /// </summary>
     public bool Continuous;
+
+    /// <summary>
+    /// The last server state the client had applied when it fired.
+    /// Other entities were drawn at roughly this tick, so the server uses it for lag compensation.
+    /// </summary>
+    public GameTick? ViewTick;
 }

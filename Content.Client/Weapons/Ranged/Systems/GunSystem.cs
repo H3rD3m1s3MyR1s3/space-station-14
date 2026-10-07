@@ -21,6 +21,7 @@ using Robust.Client.GameObjects;
 using Robust.Client.Graphics;
 using Robust.Client.Input;
 using Robust.Client.Player;
+using Robust.Client.Timing;
 using Robust.Shared.Animations;
 using Robust.Shared.Audio;
 using Robust.Shared.Configuration;
@@ -38,6 +39,7 @@ namespace Content.Client.Weapons.Ranged.Systems;
 
 public sealed partial class GunSystem : SharedGunSystem
 {
+    [Dependency] private IClientGameTiming _clientTiming = default!;
     [Dependency] private IEyeManager _eyeManager = default!;
     [Dependency] private IInputManager _inputManager = default!;
     [Dependency] private InputSystem _inputSystem = default!;
@@ -221,6 +223,7 @@ public sealed partial class GunSystem : SharedGunSystem
             Coordinates = GetNetCoordinates(coordinates),
             Gun = GetNetEntity(gun),
             Continuous = _cfg.GetCVar(CCVars.ControlHoldToAttackRanged),
+            ViewTick = _clientTiming.LastRealTick,
         });
     }
 

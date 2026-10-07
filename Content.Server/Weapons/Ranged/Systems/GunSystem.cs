@@ -144,6 +144,7 @@ public sealed partial class GunSystem : SharedGunSystem
                         Gun = gun,
                         Shooter = user,
                         Target = gun.Comp.Target,
+                        LagCompensationTick = gun.Comp.ShootRequest?.ViewTick,
                     };
                     RaiseLocalEvent(ent.Value, ref hitscanEv);
 

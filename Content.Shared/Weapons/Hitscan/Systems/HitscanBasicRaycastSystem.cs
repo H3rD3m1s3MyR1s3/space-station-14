@@ -19,6 +19,7 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
     [Dependency] private SharedPhysicsSystem _physics = default!;
     [Dependency] private SharedContainerSystem _container = default!;
     [Dependency] private ISharedAdminLogManager _log = default!;
+    [Dependency] private SharedGunLagCompensationSystem _lagCompensation = default!;
     [Dependency] private SharedTransformSystem _transform = default!;
 
     [Dependency] private EntityQuery<HitscanBasicVisualsComponent> _visualsQuery = default!;
@@ -38,6 +39,9 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
         var ray = new CollisionRay(mapCords.Position, args.ShotDirection, (int) ent.Comp.CollisionMask);
         var rayCastResults = new List<RayCastResults>(_physics.IntersectRay(mapCords.MapId, ray, ent.Comp.MaxDistance, shooter, false));
         RefineHits(ray, ent.Comp.MaxDistance, rayCastResults);
+
+        if (args.LagCompensationTick is { } tick)
+            _lagCompensation.RewindRay(shooter, mapCords.MapId, ray, ent.Comp.MaxDistance, tick, rayCastResults);
 
         var target = args.Target;
         // If you are in a container, use the raycast result

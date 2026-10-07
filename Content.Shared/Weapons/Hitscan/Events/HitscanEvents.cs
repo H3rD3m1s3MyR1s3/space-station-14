@@ -1,6 +1,7 @@
 using System.Numerics;
 using Content.Shared.Damage;
 using Robust.Shared.Map;
+using Robust.Shared.Timing;
 
 namespace Content.Shared.Weapons.Hitscan.Events;
 
@@ -35,6 +36,11 @@ public record struct HitscanTraceEvent
     /// Target that was being aimed at (Not necessarily hit).
     /// </summary>
     public EntityUid? Target;
+
+    /// <summary>
+    /// The server tick the shooter was seeing when they fired, if this shot should be lag compensated.
+    /// </summary>
+    public GameTick? LagCompensationTick;
 }
 
 /// <summary>
