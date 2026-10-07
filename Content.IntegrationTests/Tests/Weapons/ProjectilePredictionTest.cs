@@ -145,6 +145,7 @@ public sealed class ProjectilePredictionTest : InteractionTest
                 ShotId = Interlocked.Increment(ref _lastShotId),
                 Coordinates = aimCoords,
                 ViewTick = CTiming.LastRealTick,
+                Predicted = true,
             });
 
             // The server hasn't even received the request yet.
@@ -218,6 +219,7 @@ public sealed class ProjectilePredictionTest : InteractionTest
                 ShotId = Interlocked.Increment(ref _lastShotId),
                 Coordinates = aimCoords,
                 ViewTick = CTiming.LastRealTick,
+                Predicted = true,
             });
         });
 
@@ -338,6 +340,7 @@ public sealed class ProjectilePredictionTest : InteractionTest
                 ShotId = Interlocked.Increment(ref _lastShotId),
                 Coordinates = aimCoords,
                 ViewTick = CTiming.LastRealTick,
+                Predicted = true,
             });
         });
 
@@ -384,6 +387,7 @@ public sealed class ProjectilePredictionTest : InteractionTest
                 ShotId = Interlocked.Increment(ref _lastShotId),
                 Coordinates = targetCoords,
                 ViewTick = CTiming.LastRealTick,
+                Predicted = true,
             });
         });
 

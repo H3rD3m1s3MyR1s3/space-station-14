@@ -44,6 +44,7 @@ public sealed class HitscanPredictionTest : InteractionTest
                 ShotId = 1,
                 Coordinates = aimCoords,
                 ViewTick = CTiming.LastRealTick,
+                Predicted = true,
             });
 
             // The server hasn't even received the request yet.

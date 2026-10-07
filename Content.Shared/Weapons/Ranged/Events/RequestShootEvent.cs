@@ -42,4 +42,9 @@ public sealed class RequestShootEvent : EntityEventArgs
     /// even if the server runs it on a later tick than the client predicted it on.
     /// </summary>
     public int ShotId;
+
+    /// <summary>
+    /// Whether the client draws this shot itself as soon as it fires, so the server hides its own copy from it.
+    /// </summary>
+    public bool Predicted;
 }

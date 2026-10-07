@@ -154,7 +154,7 @@ public sealed partial class GunSystem : SharedGunSystem
                         Shooter = user,
                         Target = gun.Comp.Target,
                         LagCompensationTick = gun.Comp.ShootRequest?.ViewTick,
-                        ShotId = gun.Comp.ShootRequest?.ShotId,
+                        ShotId = gun.Comp.ShootRequest is { Predicted: true } request ? request.ShotId : null,
                     };
                     RaiseLocalEvent(ent.Value, ref hitscanEv);
 
@@ -206,14 +206,17 @@ public sealed partial class GunSystem : SharedGunSystem
             if (user == null || gun.Comp.ShootRequest is not { } request || !HasComp<ProjectileComponent>(projectile))
                 return;
 
-            // Client requested shots are drawn by the shooter's client as soon as they fire.
-            var predicted = EnsureComp<PredictedProjectileComponent>(projectile);
-            predicted.Shooter = user.Value;
-            predicted.ShotId = request.ShotId;
-            predicted.Index = index;
-            Dirty(projectile, predicted);
+            // Drawn by the shooter's client as soon as they fired.
+            if (request.Predicted)
+            {
+                var predicted = EnsureComp<PredictedProjectileComponent>(projectile);
+                predicted.Shooter = user.Value;
+                predicted.ShotId = request.ShotId;
+                predicted.Index = index;
+                Dirty(projectile, predicted);
+            }
 
-            // And hit what the shooter saw.
+            // Hits what the shooter saw.
             _lagCompensation.CompensateProjectile(projectile, user.Value, request.ViewTick);
         }
     }

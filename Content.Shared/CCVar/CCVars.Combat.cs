@@ -7,7 +7,15 @@ namespace Content.Shared.CCVar;
 public sealed partial class CCVars
 {
     /// <summary>
-    /// Whether hitscan shots are checked against where the shooter saw other mobs, rather than where they are now.
+    /// Whether your own shots, their projectiles and their impacts are drawn as soon as you fire, instead of when the
+    /// server's arrive a round trip later.
+    /// </summary>
+    public static readonly CVarDef<bool> CombatGunPrediction =
+        CVarDef.Create("combat.gun_prediction", true, CVar.CLIENTONLY | CVar.ARCHIVE);
+
+    /// <summary>
+    /// Whether hitscan shots and projectiles are checked against where the shooter saw other mobs, rather than where
+    /// they are now.
     /// </summary>
     [CVarControl(AdminFlags.VarEdit)]
     public static readonly CVarDef<bool> CombatGunLagCompensation =

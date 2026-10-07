@@ -254,6 +254,7 @@ public sealed partial class GunSystem : SharedGunSystem
             Continuous = _cfg.GetCVar(CCVars.ControlHoldToAttackRanged),
             ViewTick = _clientTiming.LastRealTick,
             ShotId = ++_lastShotId,
+            Predicted = _cfg.GetCVar(CCVars.CombatGunPrediction),
         });
     }
 
@@ -343,7 +344,7 @@ public sealed partial class GunSystem : SharedGunSystem
                     Recoil(user, direction, gun.Comp.CameraRecoilScalarModified);
 
                     // Draw the beam now instead of a round trip later, and skip the server's copy when it arrives.
-                    if (Timing.IsFirstTimePredicted && ent != null && user != null && gun.Comp.ShootRequest is { } request)
+                    if (Timing.IsFirstTimePredicted && ent != null && user != null && gun.Comp.ShootRequest is { Predicted: true } request)
                     {
                         _predictedHitscanShots.RemoveWhere(id => id <= request.ShotId - PredictedHitscanShotWindow);
 
@@ -373,7 +374,7 @@ public sealed partial class GunSystem : SharedGunSystem
             || user == null
             || user != _player.LocalEntity
             || prototype == null
-            || gun.Comp.ShootRequest?.ShotId is not { } shotId)
+            || gun.Comp.ShootRequest is not { Predicted: true, ShotId: var shotId })
         {
             return;
         }
