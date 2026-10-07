@@ -22,6 +22,7 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
     [Dependency] private SharedTransformSystem _transform = default!;
 
     [Dependency] private EntityQuery<HitscanBasicVisualsComponent> _visualsQuery = default!;
+    [Dependency] private EntityQuery<FixturesComponent> _fixturesQuery = default!;
 
     public override void Initialize()
     {
@@ -35,7 +36,8 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
         var shooter = args.Shooter ?? args.Gun;
         var mapCords = _transform.ToMapCoordinates(args.FromCoordinates);
         var ray = new CollisionRay(mapCords.Position, args.ShotDirection, (int) ent.Comp.CollisionMask);
-        var rayCastResults = _physics.IntersectRay(mapCords.MapId, ray, ent.Comp.MaxDistance, shooter, false);
+        var rayCastResults = new List<RayCastResults>(_physics.IntersectRay(mapCords.MapId, ray, ent.Comp.MaxDistance, shooter, false));
+        RefineHits(ray, ent.Comp.MaxDistance, rayCastResults);
 
         var target = args.Target;
         // If you are in a container, use the raycast result
@@ -84,6 +86,35 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
             var strikeEvent = new HitscanRaycastStrikeEvent { Data = data };
             RaiseLocalEvent(data.HitEntity.Value, ref strikeEvent);
         }
+    }
+
+    /// <summary>
+    /// The broadphase raycast only tests AABBs, so re-test each hit against the actual fixture shapes.
+    /// Drops hits that only clipped a corner of the AABB and moves the rest to where the ray enters the shape.
+    /// </summary>
+    private void RefineHits(CollisionRay ray, float maxDistance, List<RayCastResults> results)
+    {
+        var direction = ray.Direction.Normalized();
+
+        for (var i = results.Count - 1; i >= 0; i--)
+        {
+            var hit = results[i].HitEntity;
+
+            if (!_fixturesQuery.TryComp(hit, out var fixtures))
+                continue;
+
+            var transform = _physics.GetPhysicsTransform(hit);
+
+            if (!HitscanRayMath.TryIntersectFixtures(ray.Position, direction, maxDistance, ray.CollisionMask, fixtures, transform, out var distance))
+            {
+                results.RemoveAt(i);
+                continue;
+            }
+
+            results[i] = new RayCastResults(distance, ray.Position + direction * distance, hit);
+        }
+
+        results.Sort((a, b) => a.Distance.CompareTo(b.Distance));
     }
 
     /// <summary>
