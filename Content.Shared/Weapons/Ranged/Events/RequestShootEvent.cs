@@ -36,4 +36,10 @@ public sealed class RequestShootEvent : EntityEventArgs
     /// Other entities were drawn at roughly this tick, so the server uses it for lag compensation.
     /// </summary>
     public GameTick? ViewTick;
+
+    /// <summary>
+    /// Counts up with every shoot request a client sends. Lets the client's predicted shot be matched to the server's,
+    /// even if the server runs it on a later tick than the client predicted it on.
+    /// </summary>
+    public int ShotId;
 }

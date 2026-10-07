@@ -7,9 +7,11 @@ using Content.Shared.Weapons.Hitscan.Events;
 using Content.Shared.Weapons.Ranged.Systems;
 using Robust.Shared.Containers;
 using Robust.Shared.Map;
+using Robust.Shared.Network;
 using Robust.Shared.Physics;
 using Robust.Shared.Physics.Systems;
 using Robust.Shared.Player;
+using Robust.Shared.Timing;
 using Robust.Shared.Utility;
 
 namespace Content.Shared.Weapons.Hitscan.Systems;
@@ -20,6 +22,7 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
     [Dependency] private SharedContainerSystem _container = default!;
     [Dependency] private ISharedAdminLogManager _log = default!;
     [Dependency] private SharedGunLagCompensationSystem _lagCompensation = default!;
+    [Dependency] private INetManager _net = default!;
     [Dependency] private SharedTransformSystem _transform = default!;
 
     [Dependency] private EntityQuery<HitscanBasicVisualsComponent> _visualsQuery = default!;
@@ -35,29 +38,12 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
     private void OnHitscanFired(Entity<HitscanBasicRaycastComponent> ent, ref HitscanTraceEvent args)
     {
         var shooter = args.Shooter ?? args.Gun;
-        var mapCords = _transform.ToMapCoordinates(args.FromCoordinates);
-        var ray = new CollisionRay(mapCords.Position, args.ShotDirection, (int) ent.Comp.CollisionMask);
-        var rayCastResults = new List<RayCastResults>(_physics.IntersectRay(mapCords.MapId, ray, ent.Comp.MaxDistance, shooter, false));
-        RefineHits(ray, ent.Comp.MaxDistance, rayCastResults);
-
-        if (args.LagCompensationTick is { } tick)
-            _lagCompensation.RewindRay(shooter, mapCords.MapId, ray, ent.Comp.MaxDistance, tick, rayCastResults);
-
-        var target = args.Target;
-        // If you are in a container, use the raycast result
-        // Otherwise:
-        //  1.) Hit the first entity that you targeted.
-        //  2.) Hit the first entity that doesn't require you to aim at it specifically to be hit.
-        var result = _container.IsEntityOrParentInContainer(shooter)
-            ? rayCastResults.FirstOrNull()
-            : rayCastResults.FirstOrNull(hit => hit.HitEntity == target
-                                                || CompOrNull<RequireProjectileTargetComponent>(hit.HitEntity)?.Active != true);
-
+        var result = FindHit(ent, args.FromCoordinates, args.ShotDirection, shooter, args.Target, args.LagCompensationTick);
         var distanceTried = result?.Distance ?? ent.Comp.MaxDistance;
 
         // Do visuals without an event. They should always happen and putting it on the attempt event is weird!
         // If more stuff gets added here, it should probably be turned into an event.
-        FireEffects(args.FromCoordinates, distanceTried, args.ShotDirection.ToAngle(), ent.Owner);
+        FireEffects(args.FromCoordinates, distanceTried, args.ShotDirection.ToAngle(), ent.Owner, args.Shooter, args.ShotId);
 
         // Admin logging
         if (result?.HitEntity != null)
@@ -90,6 +76,53 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
             var strikeEvent = new HitscanRaycastStrikeEvent { Data = data };
             RaiseLocalEvent(data.HitEntity.Value, ref strikeEvent);
         }
+    }
+
+    /// <summary>
+    /// Draws a hitscan shot on the client without waiting for the server.
+    /// Only the effects are predicted, the server still decides what was hit.
+    /// </summary>
+    /// <returns>Whether anything was drawn.</returns>
+    public bool PredictEffects(Entity<HitscanBasicRaycastComponent?> ent,
+        EntityCoordinates fromCoordinates,
+        Vector2 direction,
+        EntityUid shooter,
+        EntityUid? target)
+    {
+        if (!Resolve(ent, ref ent.Comp, false))
+            return false;
+
+        var result = FindHit((ent, ent.Comp), fromCoordinates, direction, shooter, target, null);
+        var distanceTried = result?.Distance ?? ent.Comp.MaxDistance;
+        return FireEffects(fromCoordinates, distanceTried, direction.ToAngle(), ent.Owner, null, null);
+    }
+
+    /// <summary>
+    /// Casts the hitscan's ray and picks what it hits.
+    /// </summary>
+    private RayCastResults? FindHit(Entity<HitscanBasicRaycastComponent> ent,
+        EntityCoordinates fromCoordinates,
+        Vector2 direction,
+        EntityUid shooter,
+        EntityUid? target,
+        GameTick? lagCompensationTick)
+    {
+        var mapCords = _transform.ToMapCoordinates(fromCoordinates);
+        var ray = new CollisionRay(mapCords.Position, direction, (int) ent.Comp.CollisionMask);
+        var rayCastResults = new List<RayCastResults>(_physics.IntersectRay(mapCords.MapId, ray, ent.Comp.MaxDistance, shooter, false));
+        RefineHits(ray, ent.Comp.MaxDistance, rayCastResults);
+
+        if (lagCompensationTick is { } tick)
+            _lagCompensation.RewindRay(shooter, mapCords.MapId, ray, ent.Comp.MaxDistance, tick, rayCastResults);
+
+        // If you are in a container, use the raycast result
+        // Otherwise:
+        //  1.) Hit the first entity that you targeted.
+        //  2.) Hit the first entity that doesn't require you to aim at it specifically to be hit.
+        return _container.IsEntityOrParentInContainer(shooter)
+            ? rayCastResults.FirstOrNull()
+            : rayCastResults.FirstOrNull(hit => hit.HitEntity == target
+                                                || CompOrNull<RequireProjectileTargetComponent>(hit.HitEntity)?.Active != true);
     }
 
     /// <summary>
@@ -128,10 +161,18 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
     /// <param name="distance">Distance of the hitscan shot.</param>
     /// <param name="shotAngle">Angle of the shot.</param>
     /// <param name="hitscanUid">The hitscan entity itself.</param>
-    private void FireEffects(EntityCoordinates fromCoordinates, float distance, Angle shotAngle, EntityUid hitscanUid)
+    /// <param name="shooter">Who fired the hitscan.</param>
+    /// <param name="shotId">The shooter's request for this shot, see <see cref="HitscanTraceEvent.ShotId"/>.</param>
+    /// <returns>Whether there was anything to draw.</returns>
+    private bool FireEffects(EntityCoordinates fromCoordinates,
+        float distance,
+        Angle shotAngle,
+        EntityUid hitscanUid,
+        EntityUid? shooter,
+        int? shotId)
     {
         if (distance == 0 || !_visualsQuery.TryComp(hitscanUid, out var vizComp))
-            return;
+            return false;
 
         var sprites = new List<(NetCoordinates coordinates, Angle angle, SpriteSpecifier sprite, float scale)>();
         var fromXform = Transform(fromCoordinates.EntityId);
@@ -179,12 +220,28 @@ public sealed partial class HitscanBasicRaycastSystem : EntitySystem
             sprites.Add((netCoords, shotAngle.FlipPositive(), vizComp.ImpactFlash, 1f));
         }
 
-        if (sprites.Count > 0)
+        if (sprites.Count == 0)
+            return false;
+
+        var ev = new SharedGunSystem.HitscanEvent { Sprites = sprites };
+
+        // Only reached on the client when predicting, so just draw it locally.
+        if (_net.IsClient)
         {
-            RaiseNetworkEvent(new SharedGunSystem.HitscanEvent
-            {
-                Sprites = sprites,
-            }, Filter.Pvs(fromCoordinates, entityMan: EntityManager));
+            RaiseLocalEvent(ev);
+            return true;
         }
+
+        var filter = Filter.Pvs(fromCoordinates, entityMan: EntityManager);
+
+        // The shooter's client may have drawn this shot already, so tell it which shot this is.
+        if (shotId != null && TryComp<ActorComponent>(shooter, out var actor))
+        {
+            filter.RemovePlayer(actor.PlayerSession);
+            RaiseNetworkEvent(new SharedGunSystem.HitscanEvent { Sprites = sprites, ShotId = shotId }, actor.PlayerSession);
+        }
+
+        RaiseNetworkEvent(ev, filter);
+        return true;
     }
 }

@@ -16,7 +16,6 @@ using Robust.Shared.Map;
 using Robust.Shared.Player;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Utility;
-using Robust.Shared.Random;
 
 namespace Content.Server.Weapons.Ranged.Systems;
 
@@ -69,7 +68,7 @@ public sealed partial class GunSystem : SharedGunSystem
         var toMap = TransformSystem.ToMapCoordinates(toCoordinates).Position;
         var mapDirection = toMap - fromMap.Position;
         var mapAngle = mapDirection.ToAngle();
-        var angle = GetRecoilAngle(Timing.CurTime, gun, mapDirection.ToAngle());
+        var angle = GetRecoilAngle(gun, Timing.CurTime, mapDirection.ToAngle());
 
         // If applicable, this ensures the projectile is parented to grid on spawn, instead of the map.
         var fromEnt = Maps.TryFindGridAt(fromMap, out var gridUid, out _)
@@ -145,6 +144,7 @@ public sealed partial class GunSystem : SharedGunSystem
                         Shooter = user,
                         Target = gun.Comp.Target,
                         LagCompensationTick = gun.Comp.ShootRequest?.ViewTick,
+                        ShotId = gun.Comp.ShootRequest?.ShotId,
                     };
                     RaiseLocalEvent(ent.Value, ref hitscanEv);
 
@@ -231,21 +231,6 @@ public sealed partial class GunSystem : SharedGunSystem
         }
 
         return angles;
-    }
-
-    private Angle GetRecoilAngle(TimeSpan curTime, GunComponent component, Angle direction)
-    {
-        var timeSinceLastFire = (curTime - component.LastFire).TotalSeconds;
-        var newTheta = MathHelper.Clamp(component.CurrentAngle.Theta + component.AngleIncreaseModified.Theta - component.AngleDecayModified.Theta * timeSinceLastFire, component.MinAngleModified.Theta, component.MaxAngleModified.Theta);
-        component.CurrentAngle = new Angle(newTheta);
-        component.LastFire = component.NextFire;
-
-        // Convert it so angle can go either side.
-        var random = Random.NextFloat(-0.5f, 0.5f);
-        var spread = component.CurrentAngle.Theta * random;
-        var angle = new Angle(direction.Theta + component.CurrentAngle.Theta * random);
-        DebugTools.Assert(spread <= component.MaxAngleModified.Theta);
-        return angle;
     }
 
     protected override void CreateEffect(EntityUid gunUid, MuzzleFlashEvent message, EntityUid? user = null)

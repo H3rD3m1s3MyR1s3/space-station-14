@@ -41,6 +41,12 @@ public record struct HitscanTraceEvent
     /// The server tick the shooter was seeing when they fired, if this shot should be lag compensated.
     /// </summary>
     public GameTick? LagCompensationTick;
+
+    /// <summary>
+    /// The <see cref="Ranged.Events.RequestShootEvent.ShotId"/> of the request that fired this, if a client asked for it.
+    /// The shooter's client may have drawn the shot already and uses this to tell.
+    /// </summary>
+    public int? ShotId;
 }
 
 /// <summary>

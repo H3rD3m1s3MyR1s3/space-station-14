@@ -11,6 +11,7 @@ using Content.Shared.Damage;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Physics;
 using Content.Shared.Weapons.Hitscan.Components;
+using Content.Shared.Weapons.Hitscan.Systems;
 using Content.Shared.Weapons.Ranged;
 using Content.Shared.Weapons.Ranged.Components;
 using Content.Shared.Weapons.Ranged.Events;
@@ -48,6 +49,7 @@ public sealed partial class GunSystem : SharedGunSystem
     [Dependency] private IConfigurationManager _cfg = default!;
     [Dependency] private AnimationPlayerSystem _animPlayer = default!;
     [Dependency] private ClickableSystem _clickable = default!;
+    [Dependency] private HitscanBasicRaycastSystem _hitscan = default!;
     [Dependency] private MobStateSystem _mobState = default!;
     [Dependency] private SharedCameraRecoilSystem _recoil = default!;
     [Dependency] private SharedMapSystem _maps = default!;
@@ -57,6 +59,21 @@ public sealed partial class GunSystem : SharedGunSystem
 
     public static readonly EntProtoId HitscanProto = "HitscanEffect";
     private GunTargetEntityComparer _comparer = default!;
+
+    /// <summary>
+    /// <see cref="RequestShootEvent.ShotId"/> of the last shoot request sent.
+    /// </summary>
+    private int _lastShotId;
+
+    /// <summary>
+    /// <see cref="RequestShootEvent.ShotId"/>s of hitscan shots we drew ourselves, which the server sends back to us.
+    /// </summary>
+    private readonly HashSet<int> _predictedHitscanShots = new();
+
+    /// <summary>
+    /// How many shoot requests back a drawn hitscan shot is forgotten, in case the server never sends it back.
+    /// </summary>
+    private const int PredictedHitscanShotWindow = 64;
 
     public bool SpreadOverlay
     {
@@ -95,8 +112,8 @@ public sealed partial class GunSystem : SharedGunSystem
         SubscribeLocalEvent<AmmoCounterComponent, ItemStatusCollectMessage>(OnAmmoCounterCollect);
         SubscribeAllEvent<MuzzleFlashEvent>(OnMuzzleFlash);
 
-        // Plays animated effects on the client.
-        SubscribeNetworkEvent<HitscanEvent>(OnHitscan);
+        // Plays animated effects on the client, either sent by the server or from our own predicted shots.
+        SubscribeAllEvent<HitscanEvent>(OnHitscan);
 
         InitializeMagazineVisuals();
         InitializeSpentAmmo();
@@ -114,6 +131,16 @@ public sealed partial class GunSystem : SharedGunSystem
 
     private void OnHitscan(HitscanEvent ev)
     {
+        // Our own shot coming back from the server.
+        if (ev.ShotId is { } shotId)
+        {
+            // Requests are handled in order, so the server has dealt with every earlier shot by now.
+            _predictedHitscanShots.RemoveWhere(id => id < shotId);
+
+            if (_predictedHitscanShots.Contains(shotId))
+                return;
+        }
+
         // ALL I WANT IS AN ANIMATED EFFECT
 
         // TODO EFFECTS
@@ -224,6 +251,7 @@ public sealed partial class GunSystem : SharedGunSystem
             Gun = GetNetEntity(gun),
             Continuous = _cfg.GetCVar(CCVars.ControlHoldToAttackRanged),
             ViewTick = _clientTiming.LastRealTick,
+            ShotId = ++_lastShotId,
         });
     }
 
@@ -232,11 +260,33 @@ public sealed partial class GunSystem : SharedGunSystem
     {
         userImpulse = true;
 
+        // The server doesn't fire at all when this is cancelled, like when a clumsy shooter's gun backfires.
+        if (user != null)
+        {
+            var selfEvent = new SelfBeforeGunShotEvent(user.Value, gun, ammo);
+            RaiseLocalEvent(user.Value, selfEvent);
+            if (selfEvent.Cancelled)
+            {
+                userImpulse = false;
+
+                foreach (var (ent, _) in ammo)
+                {
+                    if (ent != null && IsClientSide(ent.Value))
+                        Del(ent.Value);
+                }
+
+                return;
+            }
+        }
+
         // Rather than splitting client / server for every ammo provider it's easier
         // to just delete the spawned entities. This is for programmer sanity despite the wasted perf.
         // This also means any ammo specific stuff can be grabbed as necessary.
         var direction = TransformSystem.ToMapCoordinates(fromCoordinates).Position - TransformSystem.ToMapCoordinates(toCoordinates).Position;
         var worldAngle = direction.ToAngle().Opposite();
+
+        // Roll the spread exactly like the server does, so predicted shots line up with the real ones.
+        var shotAngle = GetRecoilAngle(gun, Timing.CurTime, worldAngle);
 
         foreach (var (ent, shootable) in ammo)
         {
@@ -286,6 +336,15 @@ public sealed partial class GunSystem : SharedGunSystem
                 case HitscanAmmoComponent:
                     Audio.PlayPredicted(gun.Comp.SoundGunshotModified, gun, user);
                     Recoil(user, direction, gun.Comp.CameraRecoilScalarModified);
+
+                    // Draw the beam now instead of a round trip later, and skip the server's copy when it arrives.
+                    if (Timing.IsFirstTimePredicted && ent != null && user != null && gun.Comp.ShootRequest is { } request)
+                    {
+                        _predictedHitscanShots.RemoveWhere(id => id <= request.ShotId - PredictedHitscanShotWindow);
+
+                        if (_hitscan.PredictEffects(ent.Value, fromCoordinates, shotAngle.ToVec(), user.Value, gun.Comp.Target))
+                            _predictedHitscanShots.Add(request.ShotId);
+                    }
                     break;
             }
         }

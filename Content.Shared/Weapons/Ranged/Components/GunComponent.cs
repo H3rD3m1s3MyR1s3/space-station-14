@@ -61,7 +61,14 @@ public sealed partial class GunComponent : Component
     /// Used for recoil purposes.
     /// </summary>
     [DataField]
+    [AutoNetworkedField]
     public TimeSpan LastFire = TimeSpan.Zero;
+
+    /// <summary>
+    /// How many shots the gun has fired. Seeds the spread of each shot.
+    /// </summary>
+    [DataField, AutoNetworkedField]
+    public int ShotsFired;
 
     /// <summary>
     /// What the current spread is for shooting. This gets changed every time the gun fires.
@@ -145,7 +152,8 @@ public sealed partial class GunComponent : Component
     public EntityUid? Target = null;
 
     /// <summary>
-    /// Transient per-call server state: the client request being fired, only set during its AttemptShoot call.
+    /// Transient per-call state: the shoot request being fired, only set during its AttemptShoot call on both the server
+    /// and the client predicting it.
     /// </summary>
     [ViewVariables]
     public RequestShootEvent? ShootRequest;

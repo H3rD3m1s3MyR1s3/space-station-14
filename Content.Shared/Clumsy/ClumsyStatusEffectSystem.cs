@@ -125,7 +125,7 @@ public sealed partial class ClumsyStatusEffectSystem : EntitySystem
         if (status.Comp.FailedMessage != null)
             _popup.PopupEntity(Loc.GetString(status.Comp.FailedMessage, ("gun", args.Args.Gun)), args.AppliedTo, args.AppliedTo);
 
-        // SelfBeforeGunShotEvent is raised on server so _audio.PlayPredicted fails to play locally
+        // The sound stays server-side: a mispredicted gunshot can't be taken back if the server shoots on a later tick.
         if (_net.IsClient)
             return;
 

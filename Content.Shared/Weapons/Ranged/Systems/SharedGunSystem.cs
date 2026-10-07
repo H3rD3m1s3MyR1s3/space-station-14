@@ -12,6 +12,7 @@ using Content.Shared.Hands;
 using Content.Shared.Hands.EntitySystems;
 using Content.Shared.Popups;
 using Content.Shared.Projectiles;
+using Content.Shared.Random.Helpers;
 using Content.Shared.Tag;
 using Content.Shared.Throwing;
 using Content.Shared.Timing.Systems;
@@ -169,6 +170,38 @@ public abstract partial class SharedGunSystem : EntitySystem
 
         if (msg.Continuous)
             gun.Comp.ShotCounter = 0;
+    }
+
+    /// <summary>
+    /// Updates the gun's spread for a new shot and rolls a direction within it.
+    /// </summary>
+    /// <remarks>
+    /// Seeded with <see cref="GunComponent.ShotsFired"/>, so the client can draw the same shot the server fires but
+    /// can't choose its spread. The tick wouldn't do, as the server can end up running a client's request on a later
+    /// tick than the client predicted it on.
+    /// </remarks>
+    protected Angle GetRecoilAngle(Entity<GunComponent> gun, TimeSpan curTime, Angle direction)
+    {
+        var component = gun.Comp;
+        var timeSinceLastFire = (curTime - component.LastFire).TotalSeconds;
+        var newTheta = MathHelper.Clamp(component.CurrentAngle.Theta + component.AngleIncreaseModified.Theta - component.AngleDecayModified.Theta * timeSinceLastFire, component.MinAngleModified.Theta, component.MaxAngleModified.Theta);
+        component.CurrentAngle = new Angle(newTheta);
+        component.LastFire = component.NextFire;
+        DirtyField(gun.AsNullable(), nameof(GunComponent.CurrentAngle));
+        DirtyField(gun.AsNullable(), nameof(GunComponent.LastFire));
+
+        component.ShotsFired++;
+        DirtyField(gun.AsNullable(), nameof(GunComponent.ShotsFired));
+
+        IRobustRandom predictedRandom = new RobustRandom();
+        predictedRandom.SetSeed(SharedRandomExtensions.HashCodeCombine(component.ShotsFired, GetNetEntity(gun).Id));
+
+        // Convert it so angle can go either side.
+        var random = predictedRandom.NextFloat(-0.5f, 0.5f);
+        var spread = component.CurrentAngle.Theta * random;
+        var angle = new Angle(direction.Theta + spread);
+        DebugTools.Assert(Math.Abs(spread) <= component.MaxAngleModified.Theta);
+        return angle;
     }
 
     private void OnStopShootRequest(RequestStopShootEvent ev, EntitySessionEventArgs args)
@@ -659,6 +692,12 @@ public abstract partial class SharedGunSystem : EntitySystem
     public sealed class HitscanEvent : EntityEventArgs
     {
         public List<(NetCoordinates coordinates, Angle angle, SpriteSpecifier Sprite, float Distance)> Sprites = [];
+
+        /// <summary>
+        /// The <see cref="RequestShootEvent.ShotId"/> of the shot, only set on the copy sent to its shooter.
+        /// Their client skips it if it already drew the shot when firing.
+        /// </summary>
+        public int? ShotId;
     }
 
     /// <summary>
