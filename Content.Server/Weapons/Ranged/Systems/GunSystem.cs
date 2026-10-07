@@ -12,6 +12,7 @@ using Content.Shared.Weapons.Ranged.Systems;
 using Content.Shared.Weapons.Hitscan.Components;
 using Content.Shared.Weapons.Hitscan.Events;
 using Robust.Shared.Audio;
+using Robust.Shared.GameStates;
 using Robust.Shared.Map;
 using Robust.Shared.Player;
 using Robust.Shared.Prototypes;
@@ -30,6 +31,14 @@ public sealed partial class GunSystem : SharedGunSystem
     {
         base.Initialize();
         SubscribeLocalEvent<BallisticAmmoProviderComponent, PriceCalculationEvent>(OnBallisticPrice);
+        SubscribeLocalEvent<PredictedProjectileComponent, ComponentGetStateAttemptEvent>(OnPredictedProjectileGetStateAttempt);
+    }
+
+    private void OnPredictedProjectileGetStateAttempt(Entity<PredictedProjectileComponent> ent, ref ComponentGetStateAttemptEvent args)
+    {
+        // Only the shooter's client drew the projectile, so nobody else needs to know.
+        if (args.Player is { } player && player.AttachedEntity != ent.Comp.Shooter)
+            args.Cancelled = true;
     }
 
     private void OnBallisticPrice(Entity<BallisticAmmoProviderComponent> ent, ref PriceCalculationEvent args)
@@ -166,30 +175,42 @@ public sealed partial class GunSystem : SharedGunSystem
         {
             if (TryComp<ProjectileSpreadComponent>(ammoEnt, out var ammoSpreadComp))
             {
-                var spreadEvent = new GunGetAmmoSpreadEvent(ammoSpreadComp.Spread);
-                RaiseLocalEvent(gun, ref spreadEvent);
-
-                var angles = LinearSpread(mapAngle - spreadEvent.Spread / 2,
-                    mapAngle + spreadEvent.Spread / 2, ammoSpreadComp.Count);
+                var angles = GetSpreadAngles(gun, ammoSpreadComp, mapAngle);
 
                 ShootOrThrow(ammoEnt, angles[0].ToVec(), gunVelocity, gun, user);
-                shotProjectiles.Add(ammoEnt);
+                AddShotProjectile(ammoEnt);
 
                 for (var i = 1; i < ammoSpreadComp.Count; i++)
                 {
                     var newuid = Spawn(ammoSpreadComp.Proto, fromEnt);
                     ShootOrThrow(newuid, angles[i].ToVec(), gunVelocity, gun, user);
-                    shotProjectiles.Add(newuid);
+                    AddShotProjectile(newuid);
                 }
             }
             else
             {
                 ShootOrThrow(ammoEnt, mapDirection, gunVelocity, gun, user);
-                shotProjectiles.Add(ammoEnt);
+                AddShotProjectile(ammoEnt);
             }
 
             MuzzleFlash(gun, ammoComp, mapDirection.ToAngle(), user);
             Audio.PlayPredicted(gun.Comp.SoundGunshotModified, gun, user);
+        }
+
+        void AddShotProjectile(EntityUid projectile)
+        {
+            var index = shotProjectiles.Count;
+            shotProjectiles.Add(projectile);
+
+            // Client requested shots are drawn by the shooter's client as soon as they fire.
+            if (gun.Comp.ShootRequest?.ShotId is not { } shotId || user == null || !HasComp<ProjectileComponent>(projectile))
+                return;
+
+            var predicted = EnsureComp<PredictedProjectileComponent>(projectile);
+            predicted.Shooter = user.Value;
+            predicted.ShotId = shotId;
+            predicted.Index = index;
+            Dirty(projectile, predicted);
         }
     }
 
@@ -212,25 +233,6 @@ public sealed partial class GunSystem : SharedGunSystem
         }
 
         ShootProjectile(uid, mapDirection, gunVelocity, gun, user, gun.Comp.ProjectileSpeedModified);
-    }
-
-    /// <summary>
-    /// Gets a linear spread of angles between start and end.
-    /// </summary>
-    /// <param name="start">Start angle in degrees</param>
-    /// <param name="end">End angle in degrees</param>
-    /// <param name="intervals">How many shots there are</param>
-    private Angle[] LinearSpread(Angle start, Angle end, int intervals)
-    {
-        var angles = new Angle[intervals];
-        DebugTools.Assert(intervals > 1);
-
-        for (var i = 0; i <= intervals - 1; i++)
-        {
-            angles[i] = new Angle(start + (end - start) * i / (intervals - 1));
-        }
-
-        return angles;
     }
 
     protected override void CreateEffect(EntityUid gunUid, MuzzleFlashEvent message, EntityUid? user = null)

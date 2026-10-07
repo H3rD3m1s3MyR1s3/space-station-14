@@ -10,6 +10,7 @@ using Content.Shared.CombatMode;
 using Content.Shared.Damage;
 using Content.Shared.Mobs.Systems;
 using Content.Shared.Physics;
+using Content.Shared.Projectiles;
 using Content.Shared.Weapons.Hitscan.Components;
 using Content.Shared.Weapons.Hitscan.Systems;
 using Content.Shared.Weapons.Ranged;
@@ -51,6 +52,7 @@ public sealed partial class GunSystem : SharedGunSystem
     [Dependency] private ClickableSystem _clickable = default!;
     [Dependency] private HitscanBasicRaycastSystem _hitscan = default!;
     [Dependency] private MobStateSystem _mobState = default!;
+    [Dependency] private ProjectilePredictionSystem _projectilePrediction = default!;
     [Dependency] private SharedCameraRecoilSystem _recoil = default!;
     [Dependency] private SharedMapSystem _maps = default!;
     [Dependency] private SharedTransformSystem _xform = default!;
@@ -287,6 +289,7 @@ public sealed partial class GunSystem : SharedGunSystem
 
         // Roll the spread exactly like the server does, so predicted shots line up with the real ones.
         var shotAngle = GetRecoilAngle(gun, Timing.CurTime, worldAngle);
+        var projectileIndex = 0;
 
         foreach (var (ent, shootable) in ammo)
         {
@@ -308,6 +311,7 @@ public sealed partial class GunSystem : SharedGunSystem
                     {
                         SetCartridgeSpent(ent!.Value, cartridge, true);
                         MuzzleFlash(gun, cartridge, worldAngle, user);
+                        PredictProjectiles(gun, user, cartridge.Prototype, fromCoordinates, worldAngle, shotAngle, ref projectileIndex);
                         Audio.PlayPredicted(gun.Comp.SoundGunshotModified, gun, user);
                         Recoil(user, direction, gun.Comp.CameraRecoilScalarModified);
                         // TODO: Can't predict entity deletions.
@@ -326,6 +330,7 @@ public sealed partial class GunSystem : SharedGunSystem
                     break;
                 case AmmoComponent newAmmo:
                     MuzzleFlash(gun, newAmmo, worldAngle, user);
+                    PredictProjectiles(gun, user, MetaData(ent!.Value).EntityPrototype?.ID, fromCoordinates, worldAngle, shotAngle, ref projectileIndex);
                     Audio.PlayPredicted(gun.Comp.SoundGunshotModified, gun, user);
                     Recoil(user, direction, gun.Comp.CameraRecoilScalarModified);
                     if (IsClientSide(ent!.Value))
@@ -347,6 +352,49 @@ public sealed partial class GunSystem : SharedGunSystem
                     }
                     break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Draws the projectiles fired by one piece of ammo, in the same order and directions the server fires them.
+    /// </summary>
+    /// <param name="aimAngle">Direction the gun is aimed in, before recoil.</param>
+    /// <param name="shotAngle">Direction of a single projectile after recoil.</param>
+    /// <param name="index">How many projectiles this shot fired so far, see <see cref="PredictedProjectileComponent.Index"/>.</param>
+    private void PredictProjectiles(Entity<GunComponent> gun,
+        EntityUid? user,
+        EntProtoId? prototype,
+        EntityCoordinates from,
+        Angle aimAngle,
+        Angle shotAngle,
+        ref int index)
+    {
+        if (!Timing.IsFirstTimePredicted
+            || user == null
+            || user != _player.LocalEntity
+            || prototype == null
+            || gun.Comp.ShootRequest?.ShotId is not { } shotId)
+        {
+            return;
+        }
+
+        var speed = gun.Comp.ProjectileSpeedModified;
+        var projectile = _projectilePrediction.GetTemplate(prototype.Value);
+
+        if (TryComp<ProjectileSpreadComponent>(projectile, out var spread))
+        {
+            var angles = GetSpreadAngles(gun, spread, aimAngle);
+            _projectilePrediction.PredictProjectile(projectile, gun, user.Value, from, angles[0], speed, shotId, index++, gun.Comp.Target);
+
+            var pellet = _projectilePrediction.GetTemplate(spread.Proto);
+            for (var i = 1; i < spread.Count; i++)
+            {
+                _projectilePrediction.PredictProjectile(pellet, gun, user.Value, from, angles[i], speed, shotId, index++, gun.Comp.Target);
+            }
+        }
+        else
+        {
+            _projectilePrediction.PredictProjectile(projectile, gun, user.Value, from, shotAngle, speed, shotId, index++, gun.Comp.Target);
         }
     }
 

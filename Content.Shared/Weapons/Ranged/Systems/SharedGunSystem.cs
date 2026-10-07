@@ -204,6 +204,37 @@ public abstract partial class SharedGunSystem : EntitySystem
         return angle;
     }
 
+    /// <summary>
+    /// Gets the direction of each projectile in a spread shot, like a shotgun's pellets.
+    /// </summary>
+    /// <param name="direction">Direction the gun is aimed in, before recoil.</param>
+    protected Angle[] GetSpreadAngles(EntityUid gun, ProjectileSpreadComponent spread, Angle direction)
+    {
+        var spreadEvent = new GunGetAmmoSpreadEvent(spread.Spread);
+        RaiseLocalEvent(gun, ref spreadEvent);
+
+        return LinearSpread(direction - spreadEvent.Spread / 2, direction + spreadEvent.Spread / 2, spread.Count);
+    }
+
+    /// <summary>
+    /// Gets a linear spread of angles between start and end.
+    /// </summary>
+    /// <param name="start">Start angle in degrees</param>
+    /// <param name="end">End angle in degrees</param>
+    /// <param name="intervals">How many shots there are</param>
+    private static Angle[] LinearSpread(Angle start, Angle end, int intervals)
+    {
+        var angles = new Angle[intervals];
+        DebugTools.Assert(intervals > 1);
+
+        for (var i = 0; i <= intervals - 1; i++)
+        {
+            angles[i] = new Angle(start + (end - start) * i / (intervals - 1));
+        }
+
+        return angles;
+    }
+
     private void OnStopShootRequest(RequestStopShootEvent ev, EntitySessionEventArgs args)
     {
         var gunUid = GetEntity(ev.Gun);

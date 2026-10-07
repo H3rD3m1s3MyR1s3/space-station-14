@@ -9,6 +9,7 @@ using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
 using Content.Shared.FixedPoint;
 using Content.Shared.Projectiles;
+using Content.Shared.Weapons.Ranged.Components;
 using Robust.Shared.Physics.Events;
 using Robust.Shared.Player;
 
@@ -43,6 +44,8 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
         if (attemptEv.Cancelled)
         {
             SetShooter(uid, component, target);
+            // The shooter's client stopped drawing it at the reflector.
+            RemComp<PredictedProjectileComponent>(uid);
             return;
         }
 
@@ -91,7 +94,14 @@ public sealed partial class ProjectileSystem : SharedProjectileSystem
         }
 
         if (component.DeleteOnCollide && component.ProjectileSpent)
+        {
             QueueDel(uid);
+        }
+        else
+        {
+            // The shooter's client stopped drawing it at the first hit.
+            RemComp<PredictedProjectileComponent>(uid);
+        }
 
         if (component.ImpactEffect != null && TryComp(uid, out TransformComponent? xform))
         {
