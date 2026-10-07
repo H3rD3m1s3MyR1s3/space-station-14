@@ -24,6 +24,7 @@
         - WallLayer
   - type: InteractionOutline
   - type: Physics
+  - type: LagCompensation # So shots at targets on conveyors hit where the shooter saw them.
   - type: Damageable
   - type: Injurable
     damageContainer: Inorganic
