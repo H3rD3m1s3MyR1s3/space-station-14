@@ -304,7 +304,7 @@ public sealed partial class GuidebookWindow : FancyWindow, ILinkClickHandler, IA
         return Tree.TryGetIndexFromMetadata(entry, out _);
     }
 
-    private void SetBookmarked(bool bookmarked)
+    internal void SetBookmarked(bool bookmarked)
     {
         if (Selected is not { } selected)
             return;

@@ -21,7 +21,7 @@
                             StyleClasses="OpenLeft"
                             Disabled="True"/>
                 </BoxContainer>
-                <fancyTree:FancyTree Name="BookmarkTree"
+                <fancyTree:FancyTree Name="BookmarkTree" Access="Internal"
                                      HorizontalExpand="True"
                                      Visible="False"
                                      MaxHeight="180"
@@ -33,7 +33,7 @@
         <BoxContainer Orientation="Vertical" HorizontalExpand="True" VerticalExpand="True">
             <BoxContainer Orientation="Horizontal" HorizontalExpand="True">
                 <fancyTree:FancyTree Name="TableOfContents" HorizontalExpand="True"/>
-                <Button Name="BookmarkButton"
+                <Button Name="BookmarkButton" Access="Internal"
                         ToggleMode="True"
                         Visible="False"
                         VerticalAlignment="Top"
