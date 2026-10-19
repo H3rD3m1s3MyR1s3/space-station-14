@@ -21,12 +21,24 @@
                             StyleClasses="OpenLeft"
                             Disabled="True"/>
                 </BoxContainer>
+                <fancyTree:FancyTree Name="BookmarkTree"
+                                     HorizontalExpand="True"
+                                     Visible="False"
+                                     MaxHeight="180"
+                                     Margin="0 0 0 4"/>
                 <fancyTree:FancyTree Name="Tree" VerticalExpand="True" HorizontalExpand="True" Access="Public"/>
             </BoxContainer>
             <controls:Separator StyleClasses="LowDivider" Margin="0 -2" Orientation="Vertical" MinHeight="5"/>
         </BoxContainer>
         <BoxContainer Orientation="Vertical" HorizontalExpand="True" VerticalExpand="True">
-            <fancyTree:FancyTree Name="TableOfContents" HorizontalExpand="True"/>
+            <BoxContainer Orientation="Horizontal" HorizontalExpand="True">
+                <fancyTree:FancyTree Name="TableOfContents" HorizontalExpand="True"/>
+                <Button Name="BookmarkButton"
+                        ToggleMode="True"
+                        Visible="False"
+                        VerticalAlignment="Top"
+                        Margin="4 0 10 0"/>
+            </BoxContainer>
             <BoxContainer Name="SearchContainer" Visible="False" HorizontalExpand="True">
                 <LineEdit
                     Name="SearchBar"

@@ -8,6 +8,12 @@ guidebook-history-back-tooltip = Back
 guidebook-history-forward = ▶
 guidebook-history-forward-tooltip = Forward
 
+guidebook-bookmarks-header = Bookmarks
+guidebook-bookmark-button-not-bookmarked = ☆ Bookmark
+guidebook-bookmark-button-bookmarked = ★ Bookmark
+guidebook-bookmark-button-not-bookmarked-tooltip = Add this entry to your bookmarks.
+guidebook-bookmark-button-bookmarked-tooltip = Remove this entry from your bookmarks.
+
 guidebook-parser-error = Parser Error
 guidebook-error-message = Error Message
 

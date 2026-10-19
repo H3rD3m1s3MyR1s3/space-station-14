@@ -34,6 +34,13 @@ public sealed partial class CCVars
     public static readonly CVarDef<string> SeparatedScreenChatSize =
         CVarDef.Create("ui.separated_chat_size", "0.6,0", CVar.CLIENTONLY | CVar.ARCHIVE);
 
+    /// <summary>
+    /// Comma-separated list of the guide entry prototype IDs the player has bookmarked in the guidebook.
+    /// </summary>
+    public static readonly CVarDef<string> GuidebookBookmarks =
+        CVarDef.Create("ui.guidebook_bookmarks", "", CVar.CLIENTONLY | CVar.ARCHIVE,
+            "Comma-separated guide entry IDs bookmarked in the guidebook.");
+
     public static readonly CVarDef<bool> OutlineEnabled =
         CVarDef.Create("outline.enabled", true, CVar.CLIENTONLY);
 
