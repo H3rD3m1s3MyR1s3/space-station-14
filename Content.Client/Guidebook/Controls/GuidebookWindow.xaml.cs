@@ -53,14 +53,9 @@ public sealed partial class GuidebookWindow : FancyWindow, ILinkClickHandler, IA
             HandleFilter();
         };
 
-        HomeButton.OnPressed += _ =>
-        {
-            if (_entries.TryGetValue(CoreRuleEntry.Id, out var core))
-                SelectGuide(core);
-        };
-
-        BackButton.OnPressed += _ => NavigateHistory(_historyIndex - 1);
-        ForwardButton.OnPressed += _ => NavigateHistory(_historyIndex + 1);
+        HomeButton.OnPressed += _ => GoHome();
+        BackButton.OnPressed += _ => GoBack();
+        ForwardButton.OnPressed += _ => GoForward();
     }
 
     public void HandleClick(string link)
@@ -209,6 +204,16 @@ public sealed partial class GuidebookWindow : FancyWindow, ILinkClickHandler, IA
 
         _historyIndex = _history.Count - 1;
         UpdateHistoryButtons();
+    }
+
+    internal void GoBack() => NavigateHistory(_historyIndex - 1);
+
+    internal void GoForward() => NavigateHistory(_historyIndex + 1);
+
+    internal void GoHome()
+    {
+        if (_entries.TryGetValue(CoreRuleEntry.Id, out var core))
+            SelectGuide(core);
     }
 
     private void NavigateHistory(int index)
